@@ -2,36 +2,9 @@ const http = require('http');
 const fs = require('fs');
 const url = require('url');
 const qs=require("querystring");
-
-function templateHTML(title,list,body,control){
-    const template=`
-    <!doctype html>
-        <html>
-            <head>
-                <title>WEB1 - ${title}</title>
-                <meta charset="utf-8">
-            </head>
-            <body>
-                <h1><a href="/">WEB</a></h1>
-                ${list}
-                ${control}
-                ${body}
-            </body>
-        </html>
-    `;
-    return template;
-}
-
-function templateList(fileList){
-    let list='<ul>';
-    fileList.forEach(file=>{
-        console.log(file);
-        list+=`<li><a href="/?id=${file}">${file}</a></li>`
-        })
-    list+="</ul>";
-
-    return list;
-}
+const template=require("./lib/template");
+const path=require('path');
+const sanitizeHtml=require('sanitize-html');
 
 const app = http.createServer(function(request,response){
     const _url = request.url;
@@ -43,40 +16,46 @@ const app = http.createServer(function(request,response){
         //만약 query string이 없는 경우, 이는 메인페이지를 접속한 것을 의미한다.
         if(title === undefined){
             fs.readdir("./data",(err,files)=>{
-                const list=templateList(files);
-                const title="Welcome";
+                const list=template.list(files);
+                title="Welcome";
                 const description="Hello, Node.js";
-                const template=templateHTML(title,list,`<h2>${title}</h2>${description}`,`<a href="/create">create</a>`);
+                const html=template.html(title,list,`<h2>${title}</h2>${description}`,`<a href="/create">create</a>`);
                 response.writeHead(200);
-                response.end(template);
+                response.end(html);
                 })
             
             }
-        fs.readdir("./data",(err,files)=>{
-            const list=templateList(files);
-            const title=queryData.id;
-            fs.readFile(`./data/${title}`,'utf8',(err,description)=>{
-                const template=templateHTML(title,list,
-                    `<h2>${title}</h2>${description}`,
-                    `<a href="/create">create</a>
-                    <a href="/update?id=${title}">update</a>
-                    <form action="/process_delete" method="post">
-                        <input type="hidden" name="id" value="${title}">
-                        <input type="submit" value="delete"></input>
-                    </form>
-                    `);
-                    response.writeHead(200);
-                    response.end(template);
-                }
-            );
-            })
+        else{
+            fs.readdir("./data",(err,files)=>{
+                const list=template.list(files);
+                const fileteredId=path.parse(title).base;
+                console.log(err);
+                console.log(path.parse(title));
+                fs.readFile(`./data/${fileteredId}`,'utf8',(err,description)=>{
+                    const sanitizedTitle=sanitizeHtml(title);
+                    const sanitizedDescription=sanitizeHtml(description);
+                    const html=template.html(title,list,
+                        `<h2>${sanitizedTitle}</h2>${sanitizedDescription}`,
+                        `<a href="/create">create</a>
+                        <a href="/update?id=${sanitizedTitle}">update</a>
+                            <form action="/process_delete" method="post">
+                                <input type="hidden" name="id" value="${sanitizedTitle}">
+                                <input type="submit" value="delete"></input>
+                            </form>
+                            `);
+                        response.writeHead(200);
+                        response.end(html);
+                    }
+                );
+                })
+        }
         
     }
     else if(pathName==="/create"){
         fs.readdir("./data",(err,files)=>{
-            const list=templateList(files);
-            const title="WEB - Create";
-            const template=templateHTML(title,list,`
+            const list=template.list(files);
+            title="WEB - Create";
+            const html=template.html(title,list,`
                 <form action="/process_create" method="post"?
                     <p>
                         <input type="text" name="title" placeholder="title">
@@ -90,7 +69,7 @@ const app = http.createServer(function(request,response){
                 </form>
             `,``);
             response.writeHead(200);
-            response.end(template);
+            response.end(html);
             });
 
         }
@@ -101,7 +80,7 @@ const app = http.createServer(function(request,response){
         })
         request.on("end",function(){
             const post=qs.parse(body);
-            const title=post.title;
+            title=post.title;
             const description=post.description;
 
             fs.writeFile(`data/${title}`,description,"utf-8",(err)=>{
@@ -115,10 +94,10 @@ const app = http.createServer(function(request,response){
     }
     else if(pathName=="/update"){
         fs.readdir("./data",(err,files)=>{
-            const list=templateList(files);
-            const title=queryData.id;
-            fs.readFile(`./data/${title}`,'utf8',(err,description)=>{
-                const template=templateHTML(title,list,
+            const list=template.list(files);
+            const fileteredId=path.parse(title).base;
+            fs.readFile(`./data/${fileteredId}`,'utf8',(err,description)=>{
+                const html=template.html(title,list,
                     `
                     <form action="/process_update" method="post">
                         <input type="hidden" name="id" value="${title}">
@@ -135,7 +114,7 @@ const app = http.createServer(function(request,response){
                     `,
                     `<a href="/create">create</a><a href="/update?id=${title}">update</a>`);
                     response.writeHead(200);
-                    response.end(template);
+                    response.end(html);
                 }
             );
             })
@@ -149,11 +128,11 @@ const app = http.createServer(function(request,response){
             const post=qs.parse(body);
             console.log(post)
             const id=post.id
-            const title=post.title;
+            title=post.title;
             const description=post.description;
-            console.log(id,title,description);
+            const fileteredId=path.parse(title).base;
             fs.rename(`./data/${id}`,`./data/${title}`,(err)=>{
-                fs.writeFile(`data/${title}`,description,"utf-8",(err)=>{
+                fs.writeFile(`data/${fileteredId}`,description,"utf-8",(err)=>{
                     response.writeHead(302,{
                         Location:`/?id=${title}`
                     });
@@ -172,8 +151,8 @@ const app = http.createServer(function(request,response){
             const post=qs.parse(body);
             console.log(post)
             const id=post.id
-
-            fs.unlink(`./data/${id}`,(err)=>{
+            const fileteredId=path.parse(id).base;
+            fs.unlink(`./data/${fileteredId}`,(err)=>{
                 console.log(err)
                 response.writeHead(302,{
                     Location:`/`
